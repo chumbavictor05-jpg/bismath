@@ -1,0 +1,587 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Shared Hardened Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 120)) &&
+             data.gradeLevel is string && data.gradeLevel.size() >= 1 && data.gradeLevel.size() <= 40 &&
+             data.learningGoals is string && data.learningGoals.size() <= 500 &&
+             data.preferredSubjects is list && data.preferredSubjects.size() <= 10 &&
+             (data.preferredSubjects.size() == 0 || (data.preferredSubjects[0] is string && data.preferredSubjects[0].size() <= 40)) &&
+             data.weeklyGoalHours is int && data.weeklyGoalHours >= 1 && data.weeklyGoalHours <= 60 &&
+             data.role in ['student', 'tutor'];
+    }
+
+    function isValidSavedTutor(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.tutorId is string && isValidId(data.tutorId) &&
+             data.tutorName is string && data.tutorName.size() >= 1 && data.tutorName.size() <= 80 &&
+             data.headline is string && data.headline.size() >= 1 && data.headline.size() <= 120 &&
+             data.primarySubject is string && data.primarySubject.size() >= 1 && data.primarySubject.size() <= 50;
+    }
+
+    function isValidTutoringSession(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.tutorId is string && isValidId(data.tutorId) &&
+             data.tutorName is string && data.tutorName.size() >= 1 && data.tutorName.size() <= 80 &&
+             data.tutorTitle is string && data.tutorTitle.size() >= 1 && data.tutorTitle.size() <= 120 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60 &&
+             data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 160 &&
+             data.sessionFormat in ['Video + Whiteboard', 'Homework Review', 'Exam Prep'] &&
+             data.scheduledDateLabel is string && data.scheduledDateLabel.size() >= 1 && data.scheduledDateLabel.size() <= 40 &&
+             data.scheduledTimeLabel is string && data.scheduledTimeLabel.size() >= 1 && data.scheduledTimeLabel.size() <= 30 &&
+             data.durationMinutes in [30, 45, 60, 90] &&
+             data.hourlyRateUsd is int && data.hourlyRateUsd >= 10 && data.hourlyRateUsd <= 500 &&
+             data.totalPriceUsd is int && data.totalPriceUsd >= 0 && data.totalPriceUsd <= 1000 &&
+             data.status in ['scheduled', 'completed', 'cancelled'] &&
+             data.notes is string && data.notes.size() <= 600 &&
+             data.meetingCode is string && data.meetingCode.size() >= 4 && data.meetingCode.size() <= 24 &&
+             (!('paymentMethodLabel' in data) || data.paymentMethodLabel == null || (data.paymentMethodLabel is string && data.paymentMethodLabel.size() <= 80)) &&
+             (!('paymentStatus' in data) || data.paymentStatus == null || data.paymentStatus in ['authorized', 'settled', 'refunded', 'waived']);
+    }
+
+    function isValidSessionMessage(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.bookingId is string && isValidId(data.bookingId) &&
+             data.senderRole in ['student', 'expert_system'] &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 1000;
+    }
+
+    function isValidAvailabilityDay(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.dayLabel is string && data.dayLabel.size() >= 2 && data.dayLabel.size() <= 30 &&
+             data.timeSlots is list && data.timeSlots.size() <= 12 &&
+             (data.timeSlots.size() == 0 || (data.timeSlots[0] is string && data.timeSlots[0].size() <= 24)) &&
+             data.isEnabled is bool;
+    }
+
+    function isValidNotification(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 300 &&
+             data.type in ['new_booking', 'booking_confirmation', 'session_reminder', 'new_message', 'session_update', 'payout'] &&
+             (!('bookingId' in data) || data.bookingId == null || (data.bookingId is string && data.bookingId.size() <= 128)) &&
+             data.isRead is bool;
+    }
+
+    function isValidFcmDeviceToken(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.token is string && data.token.size() >= 10 && data.token.size() <= 512 &&
+             data.deviceLabel is string && data.deviceLabel.size() >= 1 && data.deviceLabel.size() <= 80 &&
+             data.role in ['student', 'tutor'] &&
+             data.bookingConfirmationsEnabled is bool &&
+             data.sessionRemindersEnabled is bool &&
+             data.newMessagesEnabled is bool;
+    }
+
+    function isValidPushDispatchEvent(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.eventType in ['booking_confirmation', 'session_reminder', 'new_message'] &&
+             data.recipientRole in ['student', 'tutor', 'both'] &&
+             data.bookingId is string && isValidId(data.bookingId) &&
+             data.tutorId is string && isValidId(data.tutorId) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 300 &&
+             data.deliveryStatus in ['queued', 'sent', 'local_delivered'];
+    }
+
+    function isValidPaymentMethod(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.methodType in ['card', 'google_pay', 'bank_ach', 'mpesa', 'paypal'] &&
+             data.label is string && data.label.size() >= 2 && data.label.size() <= 80 &&
+             data.last4 is string && data.last4.size() <= 8 &&
+             (!('expiryLabel' in data) || data.expiryLabel == null || (data.expiryLabel is string && data.expiryLabel.size() <= 16)) &&
+             data.isDefault is bool;
+    }
+
+    function isValidPaymentTransaction(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.bookingId is string && isValidId(data.bookingId) &&
+             data.tutorId is string && isValidId(data.tutorId) &&
+             data.tutorName is string && data.tutorName.size() >= 1 && data.tutorName.size() <= 80 &&
+             data.amountUsd is int && data.amountUsd >= 5 && data.amountUsd <= 1200 &&
+             data.platformFeeUsd is int && data.platformFeeUsd >= 0 && data.platformFeeUsd <= 300 &&
+             data.tutorNetUsd is int && data.tutorNetUsd >= 1 && data.tutorNetUsd <= 1200 &&
+             data.paymentMethodLabel is string && data.paymentMethodLabel.size() >= 2 && data.paymentMethodLabel.size() <= 80 &&
+             data.status in ['authorized', 'settled', 'refunded'] &&
+             data.receiptCode is string && data.receiptCode.size() >= 4 && data.receiptCode.size() <= 32;
+    }
+
+    function isValidTutorPayout(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.amountUsd is int && data.amountUsd >= 1 && data.amountUsd <= 50000 &&
+             data.destinationLabel is string && data.destinationLabel.size() >= 2 && data.destinationLabel.size() <= 100 &&
+             data.payoutChannel in ['Bank ACH', 'Instant Debit', 'PayPal', 'M-Pesa'] &&
+             (!('payoutType' in data) || data.payoutType == null || data.payoutType in ['tutor_earnings', 'platform_commission']) &&
+             data.status in ['requested', 'processing', 'paid'] &&
+             data.referenceCode is string && data.referenceCode.size() >= 4 && data.referenceCode.size() <= 32;
+    }
+
+    function isValidExpertApplication(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 80 &&
+             data.credentials is string && data.credentials.size() >= 2 && data.credentials.size() <= 120 &&
+             data.institution is string && data.institution.size() >= 2 && data.institution.size() <= 100 &&
+             data.primarySubject is string && data.primarySubject.size() >= 2 && data.primarySubject.size() <= 60 &&
+             data.hourlyRateUsd is int && data.hourlyRateUsd >= 15 && data.hourlyRateUsd <= 300 &&
+             data.bio is string && data.bio.size() >= 10 && data.bio.size() <= 800 &&
+             data.verificationStatus == 'pending_review';
+    }
+
+    function isValidTutorReview(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+             data.tutorId is string && isValidId(data.tutorId) &&
+             data.sessionId is string && isValidId(data.sessionId) &&
+             data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() >= 3 && data.comment.size() <= 500 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60 &&
+             data.isPublished == true;
+    }
+
+    // --- Collection Rules ---
+
+    // 1. User Profile (Strict Owner & PII Isolation)
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'gradeLevel', 'learningGoals',
+                         'preferredSubjects', 'weeklyGoalHours', 'role', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'email', 'gradeLevel', 'learningGoals',
+                         'preferredSubjects', 'weeklyGoalHours', 'role', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'email', 'gradeLevel', 'learningGoals',
+                         'preferredSubjects', 'weeklyGoalHours', 'role', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // 2. Saved Tutors Subcollection
+      match /saved_tutors/{tutorId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(tutorId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(tutorId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().tutorId == tutorId &&
+                         incoming().keys().hasAll([
+                           'userId', 'tutorId', 'tutorName', 'headline', 'primarySubject', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'tutorId', 'tutorName', 'headline', 'primarySubject', 'createdAt'
+                         ]) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidSavedTutor(incoming());
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(tutorId);
+      }
+
+      // 3. Tutoring Session Bookings Subcollection
+      match /bookings/{bookingId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(bookingId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(bookingId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().status == 'scheduled' &&
+                         incoming().keys().hasAll([
+                           'userId', 'tutorId', 'tutorName', 'tutorTitle', 'subject', 'topic',
+                           'sessionFormat', 'scheduledDateLabel', 'scheduledTimeLabel',
+                           'durationMinutes', 'hourlyRateUsd', 'totalPriceUsd', 'status',
+                           'notes', 'meetingCode', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'tutorId', 'tutorName', 'tutorTitle', 'subject', 'topic',
+                           'sessionFormat', 'scheduledDateLabel', 'scheduledTimeLabel',
+                           'durationMinutes', 'hourlyRateUsd', 'totalPriceUsd', 'status',
+                           'notes', 'meetingCode', 'paymentMethodLabel', 'paymentStatus',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidTutoringSession(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(bookingId) &&
+                         isValidTutoringSession(incoming()) &&
+                         existing().status == 'scheduled' &&
+                         incoming().userId == existing().userId &&
+                         incoming().tutorId == existing().tutorId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         (
+                           (incoming().status == 'scheduled' &&
+                            incoming().diff(existing()).affectedKeys().hasOnly([
+                              'scheduledDateLabel', 'scheduledTimeLabel', 'topic', 'notes', 'updatedAt'
+                            ])) ||
+                           (incoming().status == 'completed' &&
+                            incoming().diff(existing()).affectedKeys().hasOnly([
+                              'status', 'notes', 'paymentStatus', 'updatedAt'
+                            ])) ||
+                           (incoming().status == 'cancelled' &&
+                            incoming().diff(existing()).affectedKeys().hasOnly([
+                              'status', 'paymentStatus', 'updatedAt'
+                            ]))
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(bookingId);
+
+        // 4. Session Preparation Messages Subcollection (Parent Gate)
+        match /messages/{messageId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(bookingId) && isValidId(messageId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(userId) &&
+                           isValidId(bookingId) &&
+                           isValidId(messageId) &&
+                           incoming().userId == request.auth.uid &&
+                           incoming().bookingId == bookingId &&
+                           incoming().keys().hasAll([
+                             'userId', 'bookingId', 'senderRole', 'senderName', 'body', 'createdAt'
+                           ]) &&
+                           incoming().keys().hasOnly([
+                             'userId', 'bookingId', 'senderRole', 'senderName', 'body', 'createdAt'
+                           ]) &&
+                           incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                           isValidSessionMessage(incoming()) &&
+                           exists(/databases/$(database)/documents/users/$(userId)/bookings/$(bookingId));
+
+          allow update: if false;
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(bookingId) && isValidId(messageId);
+        }
+      }
+
+      // 5. Tutor Availability Calendar Subcollection
+      match /availability/{dayId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(dayId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(dayId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'dayLabel', 'timeSlots', 'isEnabled', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'dayLabel', 'timeSlots', 'isEnabled', 'updatedAt']) &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidAvailabilityDay(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(dayId) &&
+                         isValidAvailabilityDay(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['dayLabel', 'timeSlots', 'isEnabled', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(dayId);
+      }
+
+      // 6. Booking & Payout Notifications Subcollection
+      match /notifications/{notificationId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(notificationId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'title', 'body', 'type', 'isRead', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'body', 'type', 'bookingId', 'isRead', 'createdAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidNotification(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(notificationId) &&
+                         isValidNotification(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(notificationId);
+      }
+
+      // 7. Saved Payment Methods Subcollection
+      match /payment_methods/{methodId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(methodId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(methodId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'methodType', 'label', 'last4', 'isDefault', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'methodType', 'label', 'last4', 'expiryLabel', 'isDefault', 'createdAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidPaymentMethod(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(methodId) &&
+                         isValidPaymentMethod(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['isDefault']);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(methodId);
+      }
+
+      // 8. Payment Transactions Ledger Subcollection
+      match /transactions/{transactionId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(transactionId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(transactionId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().status == 'authorized' &&
+                         incoming().keys().hasAll([
+                           'userId', 'bookingId', 'tutorId', 'tutorName',
+                           'amountUsd', 'platformFeeUsd', 'tutorNetUsd',
+                           'paymentMethodLabel', 'status', 'receiptCode',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'bookingId', 'tutorId', 'tutorName',
+                           'amountUsd', 'platformFeeUsd', 'tutorNetUsd',
+                           'paymentMethodLabel', 'status', 'receiptCode',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidPaymentTransaction(incoming()) &&
+                         exists(/databases/$(database)/documents/users/$(userId)/bookings/$(incoming().bookingId));
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(transactionId) &&
+                         isValidPaymentTransaction(incoming()) &&
+                         existing().status == 'authorized' &&
+                         incoming().userId == existing().userId &&
+                         incoming().bookingId == existing().bookingId &&
+                         incoming().amountUsd == existing().amountUsd &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().status in ['settled', 'refunded'] &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+        allow delete: if false;
+      }
+
+      // 9. Tutor Payouts Subcollection
+      match /payouts/{payoutId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(payoutId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(payoutId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().status == 'requested' &&
+                         incoming().keys().hasAll([
+                           'userId', 'amountUsd', 'destinationLabel',
+                           'payoutChannel', 'status', 'referenceCode', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'amountUsd', 'destinationLabel',
+                           'payoutChannel', 'payoutType', 'status', 'referenceCode', 'createdAt'
+                         ]) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidTutorPayout(incoming());
+
+        allow update: if false;
+        allow delete: if false;
+      }
+
+      // 10. FCM Device Tokens & Notification Preferences Subcollection
+      match /fcm_tokens/{tokenId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(tokenId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(tokenId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll([
+                           'userId', 'token', 'deviceLabel', 'role',
+                           'bookingConfirmationsEnabled', 'sessionRemindersEnabled',
+                           'newMessagesEnabled', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'token', 'deviceLabel', 'role',
+                           'bookingConfirmationsEnabled', 'sessionRemindersEnabled',
+                           'newMessagesEnabled', 'updatedAt'
+                         ]) &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidFcmDeviceToken(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(tokenId) &&
+                         isValidFcmDeviceToken(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'token', 'deviceLabel', 'role',
+                           'bookingConfirmationsEnabled', 'sessionRemindersEnabled',
+                           'newMessagesEnabled', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(tokenId);
+      }
+
+      // 11. FCM Push Notification Outbox Subcollection (Parent-gated to booking)
+      match /push_outbox/{dispatchId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(dispatchId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(dispatchId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll([
+                           'userId', 'eventType', 'recipientRole', 'bookingId',
+                           'tutorId', 'title', 'body', 'deliveryStatus', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'eventType', 'recipientRole', 'bookingId',
+                           'tutorId', 'title', 'body', 'deliveryStatus', 'createdAt'
+                         ]) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidPushDispatchEvent(incoming()) &&
+                         exists(/databases/$(database)/documents/users/$(userId)/bookings/$(incoming().bookingId));
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(dispatchId);
+      }
+    }
+
+    // 10. Expert Verification Applications (Owner-only, prevents self-verification)
+    match /tutor_applications/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'fullName', 'credentials', 'institution',
+                         'primarySubject', 'hourlyRateUsd', 'bio', 'verificationStatus',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'fullName', 'credentials', 'institution',
+                         'primarySubject', 'hourlyRateUsd', 'bio', 'verificationStatus',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidExpertApplication(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidExpertApplication(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'fullName', 'credentials', 'institution',
+                         'primarySubject', 'hourlyRateUsd', 'bio', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    // 11. Verified Student Reviews (Parent-gated against an existing booking)
+    match /reviews/{reviewId} {
+      allow get: if isSignedIn() && isValidId(reviewId) && existing().isPublished == true;
+      allow list: if isSignedIn() && existing().isPublished == true;
+
+      allow create: if isSignedIn() &&
+                       isValidId(reviewId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'authorName', 'tutorId', 'sessionId',
+                         'rating', 'comment', 'subject', 'isPublished',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'authorName', 'tutorId', 'sessionId',
+                         'rating', 'comment', 'subject', 'isPublished',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidTutorReview(incoming()) &&
+                       exists(/databases/$(database)/documents/users/$(request.auth.uid)/bookings/$(incoming().sessionId));
+
+      allow update: if isSignedIn() &&
+                       isValidId(reviewId) &&
+                       existing().userId == request.auth.uid &&
+                       isValidTutorReview(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().tutorId == existing().tutorId &&
+                       incoming().sessionId == existing().sessionId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'comment', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(reviewId) && existing().userId == request.auth.uid;
+    }
+  }
+}

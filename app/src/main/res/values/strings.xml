@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">Scholarly</string>
+    <string name="sign_in_title">Learn globally with verified subject experts.</string>
+    <string name="sign_in_subtitle">Connect 1-on-1 anytime across every timezone with PhD faculty, university fellows, and specialists worldwide.</string>
+    <string name="sign_in_google_cta">Sign in with Google</string>
+    <string name="nav_discover">Experts</string>
+    <string name="nav_sessions">Sessions</string>
+    <string name="nav_hub">Hub</string>
+    <string name="nav_saved">Saved</string>
+    <string name="nav_profile">Profile</string>
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_search">Search verified experts</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_bookmark_add">Save expert</string>
+    <string name="cd_bookmark_remove">Remove saved expert</string>
+    <string name="cd_verified_badge">Verified Academic Expert</string>
+    <string name="cd_send_message">Send message</string>
+    <string name="cd_sign_out">Sign out</string>
+    <string name="empty_sessions_title">No sessions booked yet</string>
+    <string name="empty_sessions_subtitle">Explore verified experts and reserve your first 1-on-1 coaching session.</string>
+    <string name="empty_saved_title">No saved experts yet</string>
+    <string name="empty_saved_subtitle">Tap the bookmark icon on any verified tutor profile to build your shortlist.</string>
+</resources>

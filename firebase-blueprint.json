@@ -1,0 +1,279 @@
+{
+  "entities": {
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Authenticated user profile, learning preferences, and active role.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "gradeLevel": { "type": "string" },
+        "learningGoals": { "type": "string" },
+        "preferredSubjects": { "type": "array" },
+        "weeklyGoalHours": { "type": "integer" },
+        "role": { "type": "string", "enum": ["student", "tutor"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "gradeLevel", "learningGoals", "preferredSubjects", "weeklyGoalHours", "role", "createdAt", "updatedAt"]
+    },
+    "SavedTutor": {
+      "title": "SavedTutor",
+      "description": "Bookmarked verified subject expert.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "tutorId": { "type": "string" },
+        "tutorName": { "type": "string" },
+        "headline": { "type": "string" },
+        "primarySubject": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "tutorId", "tutorName", "headline", "primarySubject", "createdAt"]
+    },
+    "TutoringSession": {
+      "title": "TutoringSession",
+      "description": "A booked 1-on-1 tutoring session with scheduling and payment metadata.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "tutorId": { "type": "string" },
+        "tutorName": { "type": "string" },
+        "tutorTitle": { "type": "string" },
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "sessionFormat": { "type": "string", "enum": ["Video + Whiteboard", "Homework Review", "Exam Prep"] },
+        "scheduledDateLabel": { "type": "string" },
+        "scheduledTimeLabel": { "type": "string" },
+        "durationMinutes": { "type": "integer" },
+        "hourlyRateUsd": { "type": "integer" },
+        "totalPriceUsd": { "type": "integer" },
+        "status": { "type": "string", "enum": ["scheduled", "completed", "cancelled"] },
+        "notes": { "type": "string" },
+        "meetingCode": { "type": "string" },
+        "paymentMethodLabel": { "type": "string" },
+        "paymentStatus": { "type": "string", "enum": ["authorized", "settled", "refunded", "waived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "tutorId", "tutorName", "tutorTitle", "subject", "topic", "sessionFormat", "scheduledDateLabel", "scheduledTimeLabel", "durationMinutes", "hourlyRateUsd", "totalPriceUsd", "status", "notes", "meetingCode", "createdAt", "updatedAt"]
+    },
+    "SessionMessage": {
+      "title": "SessionMessage",
+      "description": "Pre-session or post-session preparation message tied to a tutoring booking.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "bookingId": { "type": "string" },
+        "senderRole": { "type": "string", "enum": ["student", "expert_system"] },
+        "senderName": { "type": "string" },
+        "body": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "bookingId", "senderRole", "senderName", "body", "createdAt"]
+    },
+    "TutorAvailabilityDay": {
+      "title": "TutorAvailabilityDay",
+      "description": "Tutor weekly availability calendar entry for a given day.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "dayLabel": { "type": "string" },
+        "timeSlots": { "type": "array" },
+        "isEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "dayLabel", "timeSlots", "isEnabled", "updatedAt"]
+    },
+    "BookingNotification": {
+      "title": "BookingNotification",
+      "description": "Notification item for new bookings, reschedules, or payout updates.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string", "enum": ["new_booking", "booking_confirmation", "session_reminder", "new_message", "session_update", "payout"] },
+        "bookingId": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "body", "type", "isRead", "createdAt"]
+    },
+    "SavedPaymentMethod": {
+      "title": "SavedPaymentMethod",
+      "description": "Saved student payment method for session checkout.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "methodType": { "type": "string", "enum": ["card", "google_pay", "bank_ach", "mpesa", "paypal"] },
+        "label": { "type": "string" },
+        "last4": { "type": "string" },
+        "expiryLabel": { "type": "string" },
+        "isDefault": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "methodType", "label", "last4", "isDefault", "createdAt"]
+    },
+    "PaymentTransaction": {
+      "title": "PaymentTransaction",
+      "description": "Payment ledger record for a tutoring session.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "bookingId": { "type": "string" },
+        "tutorId": { "type": "string" },
+        "tutorName": { "type": "string" },
+        "amountUsd": { "type": "integer" },
+        "platformFeeUsd": { "type": "integer" },
+        "tutorNetUsd": { "type": "integer" },
+        "paymentMethodLabel": { "type": "string" },
+        "status": { "type": "string", "enum": ["authorized", "settled", "refunded"] },
+        "receiptCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "bookingId", "tutorId", "tutorName", "amountUsd", "platformFeeUsd", "tutorNetUsd", "paymentMethodLabel", "status", "receiptCode", "createdAt", "updatedAt"]
+    },
+    "TutorPayout": {
+      "title": "TutorPayout",
+      "description": "Tutor payout disbursement request record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amountUsd": { "type": "integer" },
+        "destinationLabel": { "type": "string" },
+        "payoutChannel": { "type": "string", "enum": ["Bank ACH", "Instant Debit", "PayPal", "M-Pesa"] },
+        "payoutType": { "type": "string", "enum": ["tutor_earnings", "platform_commission"] },
+        "status": { "type": "string", "enum": ["requested", "processing", "paid"] },
+        "referenceCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amountUsd", "destinationLabel", "payoutChannel", "status", "referenceCode", "createdAt"]
+    },
+    "ExpertApplication": {
+      "title": "ExpertApplication",
+      "description": "Application submitted by a user to become a verified subject expert.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "credentials": { "type": "string" },
+        "institution": { "type": "string" },
+        "primarySubject": { "type": "string" },
+        "hourlyRateUsd": { "type": "integer" },
+        "bio": { "type": "string" },
+        "verificationStatus": { "type": "string", "enum": ["pending_review"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fullName", "credentials", "institution", "primarySubject", "hourlyRateUsd", "bio", "verificationStatus", "createdAt", "updatedAt"]
+    },
+    "TutorReview": {
+      "title": "TutorReview",
+      "description": "Verified student review for a subject expert linked to a booked session.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "tutorId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "rating": { "type": "integer" },
+        "comment": { "type": "string" },
+        "subject": { "type": "string" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "authorName", "tutorId", "sessionId", "rating", "comment", "subject", "isPublished", "createdAt", "updatedAt"]
+    },
+    "FcmDeviceToken": {
+      "title": "FcmDeviceToken",
+      "description": "Registered Firebase Cloud Messaging device token and notification channel preferences.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "token": { "type": "string" },
+        "deviceLabel": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "tutor"] },
+        "bookingConfirmationsEnabled": { "type": "boolean" },
+        "sessionRemindersEnabled": { "type": "boolean" },
+        "newMessagesEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "token", "deviceLabel", "role", "bookingConfirmationsEnabled", "sessionRemindersEnabled", "newMessagesEnabled", "updatedAt"]
+    },
+    "PushDispatchEvent": {
+      "title": "PushDispatchEvent",
+      "description": "Queued FCM push notification payload for booking confirmations, session reminders, and new messages.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "eventType": { "type": "string", "enum": ["booking_confirmation", "session_reminder", "new_message"] },
+        "recipientRole": { "type": "string", "enum": ["student", "tutor", "both"] },
+        "bookingId": { "type": "string" },
+        "tutorId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "deliveryStatus": { "type": "string", "enum": ["queued", "sent", "local_delivered"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "eventType", "recipientRole", "bookingId", "tutorId", "title", "body", "deliveryStatus", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "User profile and active role isolated to owner."
+    },
+    "/users/{userId}/saved_tutors/{tutorId}": {
+      "schema": { "$ref": "#/entities/SavedTutor" },
+      "description": "Student bookmarked verified tutors."
+    },
+    "/users/{userId}/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/TutoringSession" },
+      "description": "Student 1-on-1 tutoring bookings."
+    },
+    "/users/{userId}/bookings/{bookingId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/SessionMessage" },
+      "description": "Session preparation messages under a student booking."
+    },
+    "/users/{userId}/availability/{dayId}": {
+      "schema": { "$ref": "#/entities/TutorAvailabilityDay" },
+      "description": "Tutor availability calendar schedule per day."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/BookingNotification" },
+      "description": "Booking and payout notifications for the user."
+    },
+    "/users/{userId}/payment_methods/{methodId}": {
+      "schema": { "$ref": "#/entities/SavedPaymentMethod" },
+      "description": "Saved payment methods for session checkout."
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/PaymentTransaction" },
+      "description": "Session payment authorization and settlement ledger."
+    },
+    "/users/{userId}/payouts/{payoutId}": {
+      "schema": { "$ref": "#/entities/TutorPayout" },
+      "description": "Tutor payout disbursement requests."
+    },
+    "/users/{userId}/fcm_tokens/{tokenId}": {
+      "schema": { "$ref": "#/entities/FcmDeviceToken" },
+      "description": "User FCM push device tokens and category preferences."
+    },
+    "/users/{userId}/push_outbox/{dispatchId}": {
+      "schema": { "$ref": "#/entities/PushDispatchEvent" },
+      "description": "Queued FCM push notification dispatch events."
+    },
+    "/tutor_applications/{userId}": {
+      "schema": { "$ref": "#/entities/ExpertApplication" },
+      "description": "User application to join as a verified subject expert."
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/TutorReview" },
+      "description": "Verified student reviews for subject experts."
+    }
+  }
+}
